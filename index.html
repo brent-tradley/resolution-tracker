@@ -285,28 +285,47 @@
     .breakdown { display: flex; gap: 16px; margin-top: 6px; margin-bottom: 6px; }
     .breakdown-item { font-size: 0.8rem; color: #aaa; }
     .breakdown-item span { color: #667eea; font-weight: 600; }
+
+    /* Back button */
+    .back-btn {
+      background: transparent; border: none; color: #667eea;
+      font-size: 1.4rem; cursor: pointer; padding: 4px 8px;
+      margin-bottom: 12px;
+    }
+    .back-btn:hover { color: #5a6fd6; }
   </style>
 </head>
 <body>
 
+  <!-- LANDING SCREEN -->
+  <div class="container" id="landing-screen">
+    <div class="lock-screen">
+      <h1>2026 Resolutions</h1>
+      <div class="subtitle">One day at a time.</div>
+      <button class="lock-btn" id="btn-log-entry" style="margin-bottom: 12px;">Log Daily Results</button>
+      <button class="lock-btn" id="btn-view-progress" style="background: #1a1a2e; border: 1px solid #2a2a4a;">View Progress</button>
+    </div>
+  </div>
+
   <!-- PASSCODE SCREEN -->
-  <div class="container" id="lock-screen">
+  <div class="container" id="lock-screen" style="display:none;">
     <div class="lock-screen">
       <h1>2026 Resolutions</h1>
       <div class="subtitle">Enter your passcode</div>
       <input type="password" class="passcode-input" id="passcode-input" placeholder="****" maxlength="20" autocomplete="off">
       <button class="lock-btn" id="lock-btn">Unlock</button>
       <div class="lock-error" id="lock-error"></div>
-      <div class="lock-hint" id="lock-hint">First time? Pick any passcode — it becomes yours.</div>
+      <div class="lock-hint" id="lock-hint"></div>
+      <button class="lock-btn" id="btn-back-landing" style="background: transparent; border: none; color: #667eea; font-size: 0.85rem; margin-top: 16px; width: auto; padding: 8px;">Back</button>
     </div>
   </div>
 
   <!-- MAIN APP (hidden until unlocked) -->
-  <div class="container" id="app">
+  <div class="container" id="app" style="display:none;">
     <h1>2026 Resolutions</h1>
     <div class="subtitle">One day at a time.</div>
 
-    <div class="tabs">
+    <div class="tabs" id="app-tabs">
       <button class="tab active" data-tab="log">Daily Log</button>
       <button class="tab" data-tab="progress">Progress</button>
     </div>
@@ -322,6 +341,7 @@
     </div>
 
     <div class="view" id="view-progress">
+      <button class="back-btn" id="btn-back-progress" style="display:none;">&#8249; Back</button>
       <div class="overall-section">
         <div class="year-progress-label">Year Progress: <span id="year-pct">0%</span> (<span id="days-left">365</span> days left)</div>
         <div class="year-progress-bar">
@@ -368,12 +388,14 @@
 
     let logData = {};
     let userHash = '';
+    let isViewOnly = false;
 
     function saveLog() {
       localSave('rt-log2', logData);
-      // Sync to Firebase
       if (firebaseReady && dbRef) {
         dbRef.set(logData);
+        // Also write to public path so progress is viewable without passcode
+        db.ref('public/log').set(logData);
       }
     }
 
@@ -385,6 +407,39 @@
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     }
+
+    // ---- LANDING SCREEN ----
+    document.getElementById('btn-log-entry').addEventListener('click', () => {
+      document.getElementById('landing-screen').style.display = 'none';
+      document.getElementById('lock-screen').style.display = 'block';
+      document.getElementById('passcode-input').focus();
+    });
+
+    document.getElementById('btn-view-progress').addEventListener('click', () => {
+      isViewOnly = true;
+      document.getElementById('landing-screen').style.display = 'none';
+
+      if (firebaseReady) {
+        // Load from public path — no passcode needed
+        db.ref('public/log').once('value').then(snapshot => {
+          logData = snapshot.val() || {};
+          launchProgressView();
+        }).catch(() => {
+          logData = localLoad('rt-log2', {});
+          launchProgressView();
+        });
+      } else {
+        logData = localLoad('rt-log2', {});
+        launchProgressView();
+      }
+    });
+
+    document.getElementById('btn-back-landing').addEventListener('click', () => {
+      document.getElementById('lock-screen').style.display = 'none';
+      document.getElementById('landing-screen').style.display = 'block';
+      document.getElementById('lock-error').textContent = '';
+      document.getElementById('lock-btn').textContent = 'Unlock';
+    });
 
     // ---- PASSCODE / AUTH ----
     async function handleUnlock() {
@@ -400,13 +455,11 @@
       userHash = await hashPasscode(passcode);
 
       if (!firebaseReady) {
-        // No Firebase — just use localStorage
         logData = localLoad('rt-log2', {});
         launchApp();
         return;
       }
 
-      // Firebase mode
       dbRef = db.ref('users/' + userHash + '/log');
       error.textContent = '';
       document.getElementById('lock-btn').textContent = 'Loading...';
@@ -416,18 +469,17 @@
         const remote = snapshot.val();
 
         if (remote) {
-          // Existing user — load their data
           logData = remote;
           localSave('rt-log2', logData);
+          db.ref('public/log').set(logData);
         } else {
-          // New user — start fresh (or migrate localStorage)
-          const local = localLoad('rt-log2', null);
-          if (local && Object.keys(local).length > 0) {
-            logData = local;
-            dbRef.set(logData);
-          } else {
-            logData = {};
-          }
+          // No data under this hash = wrong passcode
+          error.textContent = 'Wrong passcode. Try again.';
+          document.getElementById('lock-btn').textContent = 'Unlock';
+          input.value = '';
+          input.focus();
+          dbRef = null;
+          return;
         }
         launchApp();
       } catch (e) {
@@ -443,13 +495,34 @@
       if (e.key === 'Enter') handleUnlock();
     });
 
-    // ---- LAUNCH APP ----
+    // ---- LAUNCH PROGRESS VIEW (public, no auth) ----
+    function launchProgressView() {
+      document.getElementById('app').style.display = 'block';
+      // Hide tabs and log view — only show progress
+      document.getElementById('app-tabs').style.display = 'none';
+      document.getElementById('view-log').classList.remove('active');
+      document.getElementById('view-progress').classList.add('active');
+      // Show back button in view-only mode
+      document.getElementById('btn-back-progress').style.display = 'block';
+      renderProgress();
+    }
+
+    // Back button from view-only progress → landing
+    document.getElementById('btn-back-progress').addEventListener('click', () => {
+      document.getElementById('app').style.display = 'none';
+      document.getElementById('view-progress').classList.remove('active');
+      document.getElementById('btn-back-progress').style.display = 'none';
+      document.getElementById('landing-screen').style.display = 'block';
+      isViewOnly = false;
+    });
+
+    // ---- LAUNCH FULL APP (authenticated) ----
     function launchApp() {
       document.getElementById('lock-screen').style.display = 'none';
       document.getElementById('app').style.display = 'block';
+      document.getElementById('app-tabs').style.display = 'flex';
       renderLog();
 
-      // Listen for realtime updates from other devices
       if (firebaseReady && dbRef) {
         dbRef.on('value', snapshot => {
           const remote = snapshot.val();
@@ -457,7 +530,6 @@
             logData = remote;
             localSave('rt-log2', logData);
             renderLog();
-            // Re-render progress if it's visible
             if (document.querySelector('.tab[data-tab="progress"].active')) {
               renderProgress();
             }
@@ -673,6 +745,14 @@
         saveLog();
         flashSaved();
         renderLog();
+        // Auto-advance to progress tab after submit
+        setTimeout(() => {
+          document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+          document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+          document.querySelector('.tab[data-tab="progress"]').classList.add('active');
+          document.getElementById('view-progress').classList.add('active');
+          renderProgress();
+        }, 800);
       });
     }
 
@@ -702,13 +782,16 @@
 
       ctx.clearRect(0, 0, W, H);
 
-      let maxY = 0;
-      datasets.forEach(ds => { ds.data.forEach(v => { if (v > maxY) maxY = v; }); });
-      if (options.targetLine && options.targetLine > maxY) maxY = options.targetLine;
-      maxY = maxY * 1.1 || 10;
-
       const n = labels.length;
       if (n < 2) return;
+
+      // Calculate pace value at the right edge of the chart (not the full year target)
+      const paceAtEdge = options.targetLine ? (n / 365) * options.targetLine : 0;
+
+      let maxY = 0;
+      datasets.forEach(ds => { ds.data.forEach(v => { if (v > maxY) maxY = v; }); });
+      if (paceAtEdge > maxY) maxY = paceAtEdge;
+      maxY = maxY * 1.15 || 10;
 
       ctx.strokeStyle = '#1f1f3a'; ctx.lineWidth = 1;
       for (let i = 0; i <= 4; i++) {
@@ -727,11 +810,12 @@
         ctx.fillText(parts[1] + '/' + parts[2], x, H - 4);
       }
 
+      // Pace line: shows expected value at each day, scaled to the visible window
       if (options.targetLine) {
         ctx.strokeStyle = '#ffffff30'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
         ctx.beginPath();
         ctx.moveTo(pad.left, pad.top + plotH);
-        ctx.lineTo(W - pad.right, pad.top + plotH - (options.targetLine / maxY) * plotH);
+        ctx.lineTo(W - pad.right, pad.top + plotH - (paceAtEdge / maxY) * plotH);
         ctx.stroke(); ctx.setLineDash([]);
       }
 
