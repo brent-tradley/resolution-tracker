@@ -1,0 +1,33 @@
+name: Daily Reminder Email
+
+on:
+  schedule:
+    # 5:00 AM EST = 10:00 AM UTC
+    - cron: '0 10 * * *'
+  workflow_dispatch: # allows manual trigger for testing
+
+jobs:
+  send-email:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send reminder email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.GMAIL_ADDRESS }}
+          password: ${{ secrets.GMAIL_APP_PASSWORD }}
+          subject: "Time to log yesterday's results!"
+          to: ${{ secrets.GMAIL_ADDRESS }}
+          from: Resolution Tracker <${{ secrets.GMAIL_ADDRESS }}>
+          html_body: |
+            <div style="font-family: sans-serif; max-width: 400px; margin: 0 auto; text-align: center; padding: 40px 20px;">
+              <h2 style="color: #667eea;">2026 Resolutions</h2>
+              <p style="color: #555; font-size: 16px;">Don't forget to log yesterday's results!</p>
+              <a href="https://brent-tradley.github.io/resolution-tracker/"
+                 style="display: inline-block; background: #667eea; color: white; padding: 14px 32px; border-radius: 12px; text-decoration: none; font-weight: 700; font-size: 16px; margin-top: 16px;">
+                Open Tracker
+              </a>
+              <p style="color: #999; font-size: 12px; margin-top: 24px;">One day at a time.</p>
+            </div>
