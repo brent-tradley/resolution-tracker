@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2026 Resolution Tracker</title>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f0f1a;
+      color: #e0e0e0;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container { max-width: 600px; margin: 0 auto; }
+
+    h1 {
+      text-align: center;
+      font-size: 1.8rem;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #888;
+      font-size: 0.9rem;
+      margin-bottom: 24px;
+    }
+
+    /* ---- PASSCODE SCREEN ---- */
+    .lock-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 60vh;
+    }
+    .lock-screen h1 { margin-bottom: 12px; }
+    .lock-screen .subtitle { margin-bottom: 32px; }
+
+    .passcode-input {
+      width: 200px;
+      padding: 14px;
+      border-radius: 12px;
+      border: 2px solid #2a2a4a;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-size: 1.2rem;
+      text-align: center;
+      letter-spacing: 6px;
+      margin-bottom: 16px;
+    }
+    .passcode-input:focus { outline: none; border-color: #667eea; }
+    .passcode-input::placeholder { letter-spacing: 2px; color: #555; }
+
+    .lock-btn {
+      width: 200px;
+      padding: 14px;
+      border-radius: 12px;
+      border: none;
+      background: #667eea;
+      color: white;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .lock-btn:hover { background: #5a6fd6; }
+
+    .lock-error {
+      color: #e07a5f;
+      font-size: 0.8rem;
+      margin-top: 12px;
+      min-height: 20px;
+    }
+
+    .lock-hint {
+      color: #555;
+      font-size: 0.75rem;
+      margin-top: 8px;
+    }
+
+    /* ---- LOADING ---- */
+    .loading {
+      text-align: center;
+      color: #888;
+      padding: 60px 0;
+      font-size: 0.95rem;
+    }
+
+    /* ---- APP (hidden until unlocked) ---- */
+    #app { display: none; }
+
+    /* Tabs */
+    .tabs {
+      display: flex; gap: 4px; margin-bottom: 24px;
+      background: #1a1a2e; border-radius: 12px; padding: 4px;
+    }
+    .tab {
+      flex: 1; padding: 12px; text-align: center; border-radius: 10px;
+      border: none; background: transparent; color: #888;
+      font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
+    }
+    .tab.active { background: #667eea; color: white; }
+    .tab:not(.active):hover { color: #ccc; }
+
+    .view { display: none; }
+    .view.active { display: block; }
+
+    /* Date nav */
+    .date-nav {
+      display: flex; align-items: center; justify-content: center;
+      gap: 16px; margin-bottom: 20px;
+    }
+    .date-nav button {
+      background: #1a1a2e; border: 1px solid #2a2a4a; color: #e0e0e0;
+      width: 36px; height: 36px; border-radius: 50%; cursor: pointer;
+      font-size: 1.1rem; transition: background 0.2s;
+    }
+    .date-nav button:hover { background: #2a2a4a; }
+    .date-nav .current-date {
+      font-size: 1rem; font-weight: 600; min-width: 180px; text-align: center;
+    }
+
+    /* Log cards */
+    .log-card {
+      background: #1a1a2e; border-radius: 12px; padding: 18px 20px;
+      margin-bottom: 10px; transition: all 0.2s;
+    }
+    .log-card.done { background: #1a2e1a; }
+
+    .log-card-top {
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .log-card-left { display: flex; flex-direction: column; gap: 2px; }
+    .log-card-name { font-size: 1rem; font-weight: 500; }
+    .log-card-hint { font-size: 0.75rem; color: #666; }
+    .log-card.done .log-card-hint { color: #6abf6a; }
+
+    /* Toggle switch */
+    .toggle-row { display: flex; align-items: center; gap: 10px; }
+    .toggle {
+      width: 48px; height: 26px; border-radius: 13px; border: none;
+      background: #2a2a4a; cursor: pointer; position: relative; transition: background 0.2s;
+      flex-shrink: 0;
+    }
+    .toggle::after {
+      content: ''; position: absolute; top: 3px; left: 3px;
+      width: 20px; height: 20px; border-radius: 50%; background: #666;
+      transition: all 0.2s;
+    }
+    .toggle.on { background: #4caf50; }
+    .toggle.on::after { left: 25px; background: white; }
+    .toggle-label { font-size: 0.8rem; color: #888; }
+
+    /* Expandable details */
+    .log-details {
+      max-height: 0; overflow: hidden; transition: max-height 0.3s ease; margin-top: 0;
+    }
+    .log-details.open { max-height: 120px; margin-top: 14px; }
+
+    .detail-row {
+      display: flex; align-items: center; gap: 10px; padding: 10px 0 0 0;
+    }
+    .detail-row input {
+      width: 80px; padding: 8px 10px; border-radius: 8px;
+      border: 1px solid #2a2a4a; background: #0f0f1a; color: #e0e0e0;
+      font-size: 0.9rem; text-align: center;
+    }
+    .detail-row input:focus { outline: none; border-color: #667eea; }
+    .detail-row .unit { font-size: 0.8rem; color: #888; }
+
+    /* Focus picker */
+    .focus-picker { display: flex; gap: 6px; }
+    .focus-btn {
+      padding: 8px 14px; border-radius: 8px; border: 1px solid #2a2a4a;
+      background: #0f0f1a; color: #888; font-size: 0.85rem; cursor: pointer;
+      transition: all 0.2s;
+    }
+    .focus-btn.selected { background: #667eea; border-color: #667eea; color: white; }
+    .focus-btn:hover:not(.selected) { border-color: #667eea; color: #ccc; }
+
+    /* Steps input */
+    .steps-row { display: flex; align-items: center; gap: 8px; }
+    .steps-row input {
+      width: 90px; padding: 8px 10px; border-radius: 8px;
+      border: 1px solid #2a2a4a; background: #0f0f1a; color: #e0e0e0;
+      font-size: 0.9rem; text-align: center;
+    }
+    .steps-row input:focus { outline: none; border-color: #667eea; }
+    .steps-row .unit { font-size: 0.8rem; color: #888; }
+
+    /* Submit button */
+    .submit-btn {
+      width: 100%; padding: 14px; border-radius: 12px; border: none;
+      background: #667eea; color: white; font-size: 1rem; font-weight: 700;
+      cursor: pointer; transition: background 0.2s; margin-top: 6px;
+    }
+    .submit-btn:hover { background: #5a6fd6; }
+    .submit-btn:active { background: #4e5fc4; }
+
+    /* Saved msg */
+    .saved-msg {
+      text-align: center; color: #4caf50; font-size: 0.85rem;
+      margin-top: 8px; opacity: 0; transition: opacity 0.3s;
+    }
+    .saved-msg.show { opacity: 1; }
+
+    /* ---- PROGRESS VIEW ---- */
+    .section-title {
+      font-size: 0.8rem; text-transform: uppercase; letter-spacing: 2px;
+      color: #667eea; margin-bottom: 12px; padding-bottom: 6px;
+      border-bottom: 1px solid #1a1a2e;
+    }
+
+    .overall-section {
+      background: #1a1a2e; border-radius: 12px; padding: 20px;
+      text-align: center; margin-bottom: 24px;
+    }
+    .year-progress-label { font-size: 0.8rem; color: #888; margin-bottom: 8px; }
+    .year-progress-bar {
+      background: #2a2a4a; border-radius: 10px; height: 8px; overflow: hidden;
+    }
+    .year-progress-fill {
+      height: 100%; border-radius: 10px;
+      background: linear-gradient(90deg, #444, #888); transition: width 0.4s ease;
+    }
+
+    /* Stat cards */
+    .stat-card {
+      background: #1a1a2e; border-radius: 12px; padding: 20px; margin-bottom: 12px;
+    }
+    .stat-header {
+      display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;
+    }
+    .stat-name { font-weight: 600; font-size: 1rem; }
+    .stat-value { font-size: 0.9rem; color: #667eea; font-weight: 600; }
+
+    .stat-detail { font-size: 0.75rem; color: #888; margin-bottom: 10px; }
+    .stat-detail.ahead { color: #6abf6a; }
+    .stat-detail.behind { color: #e07a5f; }
+
+    .progress-bar {
+      background: #2a2a4a; border-radius: 10px; height: 12px;
+      overflow: hidden; margin-bottom: 6px;
+    }
+    .progress-fill {
+      height: 100%; border-radius: 10px;
+      background: linear-gradient(90deg, #667eea, #764ba2);
+      transition: width 0.4s ease;
+    }
+    .progress-fill.complete {
+      background: linear-gradient(90deg, #4caf50, #6abf6a);
+    }
+
+    .pct-label { font-size: 0.75rem; color: #888; text-align: right; margin-bottom: 10px; }
+
+    /* Charts */
+    .chart-container {
+      margin-top: 12px; background: #12121f; border-radius: 8px;
+      padding: 12px; position: relative;
+    }
+    .chart-container canvas { width: 100%; height: 150px; display: block; }
+    .chart-legend {
+      display: flex; gap: 16px; justify-content: center;
+      margin-top: 8px; font-size: 0.7rem; color: #888;
+    }
+    .legend-dot {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      margin-right: 4px; vertical-align: middle;
+    }
+
+    /* Strength breakdown */
+    .breakdown { display: flex; gap: 16px; margin-top: 6px; margin-bottom: 6px; }
+    .breakdown-item { font-size: 0.8rem; color: #aaa; }
+    .breakdown-item span { color: #667eea; font-weight: 600; }
+  </style>
+</head>
+<body>
+
+  <!-- PASSCODE SCREEN -->
+  <div class="container" id="lock-screen">
+    <div class="lock-screen">
+      <h1>2026 Resolutions</h1>
+      <div class="subtitle">Enter your passcode</div>
+      <input type="password" class="passcode-input" id="passcode-input" placeholder="****" maxlength="20" autocomplete="off">
+      <button class="lock-btn" id="lock-btn">Unlock</button>
+      <div class="lock-error" id="lock-error"></div>
+      <div class="lock-hint" id="lock-hint">First time? Pick any passcode — it becomes yours.</div>
+    </div>
+  </div>
+
+  <!-- MAIN APP (hidden until unlocked) -->
+  <div class="container" id="app">
+    <h1>2026 Resolutions</h1>
+    <div class="subtitle">One day at a time.</div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="log">Daily Log</button>
+      <button class="tab" data-tab="progress">Progress</button>
+    </div>
+
+    <div class="view active" id="view-log">
+      <div class="date-nav">
+        <button id="prev-day">&#8249;</button>
+        <div class="current-date" id="current-date"></div>
+        <button id="next-day">&#8250;</button>
+      </div>
+      <div id="log-cards"></div>
+      <div class="saved-msg" id="saved-msg">Saved!</div>
+    </div>
+
+    <div class="view" id="view-progress">
+      <div class="overall-section">
+        <div class="year-progress-label">Year Progress: <span id="year-pct">0%</span> (<span id="days-left">365</span> days left)</div>
+        <div class="year-progress-bar">
+          <div class="year-progress-fill" id="year-bar"></div>
+        </div>
+      </div>
+      <div id="progress-cards"></div>
+    </div>
+  </div>
+
+  <script>
+    // ============================================================
+    // FIREBASE CONFIG — Replace with your own Firebase project config
+    // ============================================================
+    const firebaseConfig = {
+      apiKey: "AIzaSyDFXy2P9VJ4GPDVIVsWodxFRdkjLRAQlXg",
+      authDomain: "resolution-tracker-a540c.firebaseapp.com",
+      databaseURL: "https://resolution-tracker-a540c-default-rtdb.firebaseio.com",
+      projectId: "resolution-tracker-a540c",
+      storageBucket: "resolution-tracker-a540c.firebasestorage.app",
+      messagingSenderId: "657151689146",
+      appId: "1:657151689146:web:b845cc59845f1ff284dd83"
+    };
+
+    // ---- Initialize Firebase ----
+    let db = null;
+    let dbRef = null;
+    let firebaseReady = false;
+
+    try {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.database();
+      firebaseReady = firebaseConfig.apiKey !== "YOUR_API_KEY";
+    } catch (e) {
+      console.warn('Firebase not configured yet:', e);
+    }
+
+    // ---- STORAGE (localStorage fallback + Firebase sync) ----
+    function localLoad(key, fb) {
+      try { const d = localStorage.getItem(key); return d ? JSON.parse(d) : fb; }
+      catch { return fb; }
+    }
+    function localSave(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
+
+    let logData = {};
+    let userHash = '';
+
+    function saveLog() {
+      localSave('rt-log2', logData);
+      // Sync to Firebase
+      if (firebaseReady && dbRef) {
+        dbRef.set(logData);
+      }
+    }
+
+    // ---- SHA-256 hash for passcode ----
+    async function hashPasscode(passcode) {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(passcode + '-resolutions-2026');
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    // ---- PASSCODE / AUTH ----
+    async function handleUnlock() {
+      const input = document.getElementById('passcode-input');
+      const error = document.getElementById('lock-error');
+      const passcode = input.value.trim();
+
+      if (passcode.length < 4) {
+        error.textContent = 'Passcode must be at least 4 characters';
+        return;
+      }
+
+      userHash = await hashPasscode(passcode);
+
+      if (!firebaseReady) {
+        // No Firebase — just use localStorage
+        logData = localLoad('rt-log2', {});
+        launchApp();
+        return;
+      }
+
+      // Firebase mode
+      dbRef = db.ref('users/' + userHash + '/log');
+      error.textContent = '';
+      document.getElementById('lock-btn').textContent = 'Loading...';
+
+      try {
+        const snapshot = await dbRef.once('value');
+        const remote = snapshot.val();
+
+        if (remote) {
+          // Existing user — load their data
+          logData = remote;
+          localSave('rt-log2', logData);
+        } else {
+          // New user — start fresh (or migrate localStorage)
+          const local = localLoad('rt-log2', null);
+          if (local && Object.keys(local).length > 0) {
+            logData = local;
+            dbRef.set(logData);
+          } else {
+            logData = {};
+          }
+        }
+        launchApp();
+      } catch (e) {
+        console.error('Firebase error:', e);
+        error.textContent = 'Connection error — loading offline data';
+        logData = localLoad('rt-log2', {});
+        setTimeout(launchApp, 1500);
+      }
+    }
+
+    document.getElementById('lock-btn').addEventListener('click', handleUnlock);
+    document.getElementById('passcode-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') handleUnlock();
+    });
+
+    // ---- LAUNCH APP ----
+    function launchApp() {
+      document.getElementById('lock-screen').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      renderLog();
+
+      // Listen for realtime updates from other devices
+      if (firebaseReady && dbRef) {
+        dbRef.on('value', snapshot => {
+          const remote = snapshot.val();
+          if (remote) {
+            logData = remote;
+            localSave('rt-log2', logData);
+            renderLog();
+            // Re-render progress if it's visible
+            if (document.querySelector('.tab[data-tab="progress"].active')) {
+              renderProgress();
+            }
+          }
+        });
+      }
+    }
+
+    // ---- DATE HELPERS ----
+    let viewDate = new Date();
+
+    function dateKey(d) {
+      return d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+        String(d.getDate()).padStart(2, '0');
+    }
+    function formatDate(d) {
+      const todayStr = dateKey(new Date());
+      const dStr = dateKey(d);
+      const y = new Date(); y.setDate(y.getDate() - 1);
+      if (dStr === todayStr) return 'Today';
+      if (dStr === dateKey(y)) return 'Yesterday';
+      return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    }
+    function isToday(d) { return dateKey(d) === dateKey(new Date()); }
+    function isFuture(d) { return dateKey(d) > dateKey(new Date()); }
+
+    function getDayOfYear() {
+      const now = new Date();
+      const start = new Date(2026, 0, 1);
+      return Math.max(1, Math.ceil((now - start) / (1000 * 60 * 60 * 24)));
+    }
+
+    // ---- TABS ----
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById('view-' + tab.dataset.tab).classList.add('active');
+        if (tab.dataset.tab === 'progress') renderProgress();
+      });
+    });
+
+    // ---- DATE NAV ----
+    document.getElementById('prev-day').addEventListener('click', () => {
+      viewDate.setDate(viewDate.getDate() - 1); renderLog();
+    });
+    document.getElementById('next-day').addEventListener('click', () => {
+      if (!isToday(viewDate)) { viewDate.setDate(viewDate.getDate() + 1); renderLog(); }
+    });
+
+    // ---- FLASH SAVED ----
+    let savedTimeout;
+    function flashSaved() {
+      const el = document.getElementById('saved-msg');
+      el.classList.add('show');
+      clearTimeout(savedTimeout);
+      savedTimeout = setTimeout(() => el.classList.remove('show'), 1500);
+    }
+
+    // ---- RENDER DAILY LOG ----
+    function renderLog() {
+      document.getElementById('current-date').textContent = formatDate(viewDate);
+      document.getElementById('next-day').style.opacity = isToday(viewDate) ? '0.3' : '1';
+
+      const dk = dateKey(viewDate);
+      const future = isFuture(viewDate);
+      const day = logData[dk] || {};
+      const submitted = day._submitted || false;
+      const container = document.getElementById('log-cards');
+
+      if (future) {
+        container.innerHTML = '<div style="text-align:center;color:#666;padding:40px 0;">Can\'t log future days</div>';
+        return;
+      }
+
+      const stepsVal = submitted ? (day.steps || 0) : '';
+      const ranToday = submitted ? (day.run || false) : false;
+      const runMiles = submitted ? (day.runMiles || '') : '';
+      const didStrength = submitted ? (day.strength || false) : false;
+      const sFocus = submitted ? (day.strengthFocus || '') : '';
+      const didAbs = submitted ? (day.abs || false) : false;
+
+      const stepsHit = submitted && (day.steps || 0) >= 10000;
+
+      container.innerHTML = `
+        <!-- STEPS -->
+        <div class="log-card ${stepsHit ? 'done' : ''}" id="card-steps">
+          <div class="log-card-top">
+            <div class="log-card-left">
+              <div class="log-card-name">Steps</div>
+              <div class="log-card-hint">${stepsHit ? Number(day.steps).toLocaleString() + ' — target hit!' : 'Daily target: 10,000'}</div>
+            </div>
+            <div class="steps-row">
+              <input type="number" id="inp-steps" min="0" step="100" value="${stepsVal}" placeholder="0">
+              <span class="unit">steps</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- RUN -->
+        <div class="log-card ${submitted && ranToday && runMiles > 0 ? 'done' : ''}" id="card-run">
+          <div class="log-card-top">
+            <div class="log-card-left">
+              <div class="log-card-name">Run</div>
+              <div class="log-card-hint">${submitted && ranToday && runMiles > 0 ? runMiles + ' miles logged' : 'Did you run today?'}</div>
+            </div>
+            <div class="toggle-row">
+              <span class="toggle-label" id="lbl-run">${ranToday ? 'Yes' : 'No'}</span>
+              <button class="toggle ${ranToday ? 'on' : ''}" id="tog-run"></button>
+            </div>
+          </div>
+          <div class="log-details ${ranToday ? 'open' : ''}" id="det-run">
+            <div class="detail-row">
+              <input type="number" id="inp-runMiles" min="0" step="0.1" value="${runMiles}" placeholder="0">
+              <span class="unit">miles</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- STRENGTH -->
+        <div class="log-card ${submitted && didStrength && sFocus ? 'done' : ''}" id="card-strength">
+          <div class="log-card-top">
+            <div class="log-card-left">
+              <div class="log-card-name">Strength Workout</div>
+              <div class="log-card-hint">${submitted && didStrength && sFocus ? sFocus.charAt(0).toUpperCase() + sFocus.slice(1) + ' body — logged!' : 'Did you lift today?'}</div>
+            </div>
+            <div class="toggle-row">
+              <span class="toggle-label" id="lbl-strength">${didStrength ? 'Yes' : 'No'}</span>
+              <button class="toggle ${didStrength ? 'on' : ''}" id="tog-strength"></button>
+            </div>
+          </div>
+          <div class="log-details ${didStrength ? 'open' : ''}" id="det-strength">
+            <div class="detail-row">
+              <div class="focus-picker">
+                <button class="focus-btn ${sFocus === 'upper' ? 'selected' : ''}" data-focus="upper">Upper</button>
+                <button class="focus-btn ${sFocus === 'lower' ? 'selected' : ''}" data-focus="lower">Lower</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ABS -->
+        <div class="log-card ${submitted && didAbs ? 'done' : ''}" id="card-abs">
+          <div class="log-card-top">
+            <div class="log-card-left">
+              <div class="log-card-name">Ab Workout</div>
+              <div class="log-card-hint">${submitted && didAbs ? 'Done!' : 'Did you do abs today?'}</div>
+            </div>
+            <div class="toggle-row">
+              <span class="toggle-label" id="lbl-abs">${didAbs ? 'Yes' : 'No'}</span>
+              <button class="toggle ${didAbs ? 'on' : ''}" id="tog-abs"></button>
+            </div>
+          </div>
+        </div>
+
+        <button class="submit-btn" id="btn-submit">${submitted ? 'Update' : 'Submit'}</button>
+      `;
+
+      // Toggle handlers (UI only)
+      document.getElementById('tog-run').addEventListener('click', () => {
+        const tog = document.getElementById('tog-run');
+        const det = document.getElementById('det-run');
+        const lbl = document.getElementById('lbl-run');
+        tog.classList.toggle('on'); det.classList.toggle('open');
+        lbl.textContent = tog.classList.contains('on') ? 'Yes' : 'No';
+        if (!tog.classList.contains('on')) document.getElementById('inp-runMiles').value = '';
+      });
+
+      document.getElementById('tog-strength').addEventListener('click', () => {
+        const tog = document.getElementById('tog-strength');
+        const det = document.getElementById('det-strength');
+        const lbl = document.getElementById('lbl-strength');
+        tog.classList.toggle('on'); det.classList.toggle('open');
+        lbl.textContent = tog.classList.contains('on') ? 'Yes' : 'No';
+        if (!tog.classList.contains('on')) document.querySelectorAll('.focus-btn').forEach(b => b.classList.remove('selected'));
+      });
+
+      document.getElementById('tog-abs').addEventListener('click', () => {
+        const tog = document.getElementById('tog-abs');
+        const lbl = document.getElementById('lbl-abs');
+        tog.classList.toggle('on');
+        lbl.textContent = tog.classList.contains('on') ? 'Yes' : 'No';
+      });
+
+      document.querySelectorAll('.focus-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.focus-btn').forEach(b => b.classList.remove('selected'));
+          btn.classList.add('selected');
+        });
+      });
+
+      // Submit
+      document.getElementById('btn-submit').addEventListener('click', () => {
+        if (!logData[dk]) logData[dk] = {};
+        const d = logData[dk];
+
+        d.steps = parseInt(document.getElementById('inp-steps').value) || 0;
+
+        const ranOn = document.getElementById('tog-run').classList.contains('on');
+        d.run = ranOn;
+        d.runMiles = ranOn ? (parseFloat(document.getElementById('inp-runMiles').value) || 0) : 0;
+
+        const strOn = document.getElementById('tog-strength').classList.contains('on');
+        const focusSel = document.querySelector('.focus-btn.selected');
+        d.strength = strOn;
+        d.strengthFocus = strOn && focusSel ? focusSel.dataset.focus : '';
+
+        d.abs = document.getElementById('tog-abs').classList.contains('on');
+
+        d._submitted = true;
+        saveLog();
+        flashSaved();
+        renderLog();
+      });
+    }
+
+    // ---- PROGRESS HELPERS ----
+    function allDatesThisYear() {
+      const dates = [];
+      const start = new Date(2026, 0, 1);
+      const now = new Date();
+      const d = new Date(start);
+      while (d <= now) { dates.push(dateKey(d)); d.setDate(d.getDate() + 1); }
+      return dates;
+    }
+
+    // ---- CHART DRAWING ----
+    function drawLineChart(canvas, datasets, labels, options = {}) {
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+
+      const W = rect.width, H = rect.height;
+      const pad = { top: 10, right: 10, bottom: 24, left: 36 };
+      const plotW = W - pad.left - pad.right;
+      const plotH = H - pad.top - pad.bottom;
+
+      ctx.clearRect(0, 0, W, H);
+
+      let maxY = 0;
+      datasets.forEach(ds => { ds.data.forEach(v => { if (v > maxY) maxY = v; }); });
+      if (options.targetLine && options.targetLine > maxY) maxY = options.targetLine;
+      maxY = maxY * 1.1 || 10;
+
+      const n = labels.length;
+      if (n < 2) return;
+
+      ctx.strokeStyle = '#1f1f3a'; ctx.lineWidth = 1;
+      for (let i = 0; i <= 4; i++) {
+        const y = pad.top + plotH - (i / 4) * plotH;
+        ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y); ctx.stroke();
+        ctx.fillStyle = '#555'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+        const val = maxY * i / 4;
+        ctx.fillText(val >= 1000 ? (val / 1000).toFixed(1) + 'k' : Math.round(val), pad.left - 4, y + 3);
+      }
+
+      const labelStep = Math.max(1, Math.floor(n / 6));
+      ctx.fillStyle = '#555'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
+      for (let i = 0; i < n; i += labelStep) {
+        const x = pad.left + (i / (n - 1)) * plotW;
+        const parts = labels[i].split('-');
+        ctx.fillText(parts[1] + '/' + parts[2], x, H - 4);
+      }
+
+      if (options.targetLine) {
+        ctx.strokeStyle = '#ffffff30'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(pad.left, pad.top + plotH);
+        ctx.lineTo(W - pad.right, pad.top + plotH - (options.targetLine / maxY) * plotH);
+        ctx.stroke(); ctx.setLineDash([]);
+      }
+
+      datasets.forEach(ds => {
+        ctx.strokeStyle = ds.color; ctx.lineWidth = 2; ctx.beginPath();
+        ds.data.forEach((val, i) => {
+          const x = pad.left + (i / (n - 1)) * plotW;
+          const y = pad.top + plotH - (val / maxY) * plotH;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        if (ds.fill) {
+          ctx.globalAlpha = 0.1; ctx.fillStyle = ds.color;
+          ctx.lineTo(pad.left + plotW, pad.top + plotH);
+          ctx.lineTo(pad.left, pad.top + plotH);
+          ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
+        }
+      });
+    }
+
+    function drawBarChart(canvas, data, labels) {
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+
+      const W = rect.width, H = rect.height;
+      const pad = { top: 10, right: 10, bottom: 24, left: 36 };
+      const plotW = W - pad.left - pad.right;
+      const plotH = H - pad.top - pad.bottom;
+
+      ctx.clearRect(0, 0, W, H);
+
+      let maxY = 0;
+      data.forEach(v => { if (v > maxY) maxY = v; });
+      maxY = Math.max(maxY * 1.1, 10000);
+
+      ctx.strokeStyle = '#4caf5060'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+      const targetY = pad.top + plotH - (10000 / maxY) * plotH;
+      ctx.beginPath(); ctx.moveTo(pad.left, targetY); ctx.lineTo(W - pad.right, targetY);
+      ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = '#555'; ctx.font = '9px sans-serif'; ctx.textAlign = 'left';
+      ctx.fillText('10k', W - pad.right + 2, targetY + 3);
+
+      ctx.strokeStyle = '#1f1f3a'; ctx.lineWidth = 1;
+      for (let i = 0; i <= 4; i++) {
+        const y = pad.top + plotH - (i / 4) * plotH;
+        ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y); ctx.stroke();
+        ctx.fillStyle = '#555'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+        const val = maxY * i / 4;
+        ctx.fillText(val >= 1000 ? (val / 1000).toFixed(0) + 'k' : Math.round(val), pad.left - 4, y + 3);
+      }
+
+      const n = data.length;
+      if (n === 0) return;
+      const barW = Math.max(1, Math.min(8, plotW / n - 1));
+
+      data.forEach((val, i) => {
+        const x = pad.left + (i / Math.max(n - 1, 1)) * plotW - barW / 2;
+        const barH = (val / maxY) * plotH;
+        ctx.fillStyle = val >= 10000 ? '#4caf50' : '#667eea';
+        ctx.fillRect(x, pad.top + plotH - barH, barW, barH);
+      });
+
+      const labelStep = Math.max(1, Math.floor(n / 6));
+      ctx.fillStyle = '#555'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
+      for (let i = 0; i < n; i += labelStep) {
+        const x = pad.left + (i / Math.max(n - 1, 1)) * plotW;
+        const parts = labels[i].split('-');
+        ctx.fillText(parts[1] + '/' + parts[2], x, H - 4);
+      }
+    }
+
+    // ---- RENDER PROGRESS ----
+    function renderProgress() {
+      const start = new Date(2026, 0, 1), end = new Date(2027, 0, 1), now = new Date();
+      const totalDays = (end - start) / 864e5;
+      const elapsed = Math.max(0, (now - start) / 864e5);
+      const yearPct = Math.min((elapsed / totalDays) * 100, 100);
+      const daysLeft = Math.max(0, Math.ceil(totalDays - elapsed));
+
+      document.getElementById('year-bar').style.width = yearPct.toFixed(1) + '%';
+      document.getElementById('year-pct').textContent = yearPct.toFixed(1) + '%';
+      document.getElementById('days-left').textContent = daysLeft;
+
+      const dates = allDatesThisYear();
+      const dayCount = dates.length;
+
+      const stepDays = dates.filter(dk => (logData[dk]?.steps || 0) >= 10000).length;
+      const stepsAttainment = dayCount > 0 ? (stepDays / dayCount) * 100 : 0;
+      const stepsData = dates.map(dk => logData[dk]?.steps || 0);
+
+      let runTotal = 0; const runCumulative = [];
+      dates.forEach(dk => {
+        runTotal += (logData[dk]?.run && logData[dk]?.runMiles) ? logData[dk].runMiles : 0;
+        runCumulative.push(runTotal);
+      });
+      const runTarget = 200, runExpected = (dayCount / 365) * runTarget;
+      const runPct = (runTotal / runTarget) * 100;
+      const runPacePct = runExpected > 0 ? (runTotal / runExpected) * 100 : 0;
+
+      let strengthTotal = 0, upperCount = 0, lowerCount = 0; const strengthCumulative = [];
+      dates.forEach(dk => {
+        if (logData[dk]?.strength) {
+          strengthTotal++;
+          if (logData[dk]?.strengthFocus === 'upper') upperCount++;
+          if (logData[dk]?.strengthFocus === 'lower') lowerCount++;
+        }
+        strengthCumulative.push(strengthTotal);
+      });
+      const strengthTarget = 75, strengthExpected = (dayCount / 365) * strengthTarget;
+      const strengthPct = (strengthTotal / strengthTarget) * 100;
+      const strengthPacePct = strengthExpected > 0 ? (strengthTotal / strengthExpected) * 100 : 0;
+
+      let absTotal = 0; const absCumulative = [];
+      dates.forEach(dk => {
+        if (logData[dk]?.abs) absTotal++;
+        absCumulative.push(absTotal);
+      });
+      const absTarget = 75, absExpected = (dayCount / 365) * absTarget;
+      const absPct = (absTotal / absTarget) * 100;
+      const absPacePct = absExpected > 0 ? (absTotal / absExpected) * 100 : 0;
+
+      document.getElementById('progress-cards').innerHTML = `
+        <div class="stat-card">
+          <div class="stat-header">
+            <div class="stat-name">Steps</div>
+            <div class="stat-value">${stepDays} / ${dayCount} days</div>
+          </div>
+          <div class="stat-detail ${stepsAttainment >= 90 ? 'ahead' : stepsAttainment >= 70 ? '' : 'behind'}">
+            ${stepsAttainment.toFixed(1)}% of days at 10,000+ steps
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill ${stepsAttainment >= 95 ? 'complete' : ''}" style="width: ${Math.min(stepsAttainment, 100)}%"></div>
+          </div>
+          <div class="chart-container"><canvas id="chart-steps"></canvas></div>
+          <div class="chart-legend">
+            <span><span class="legend-dot" style="background:#667eea"></span>Daily steps</span>
+            <span><span class="legend-dot" style="background:#4caf50"></span>10k target</span>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-header">
+            <div class="stat-name">Running</div>
+            <div class="stat-value">${runTotal.toFixed(1)} / ${runTarget} miles</div>
+          </div>
+          <div class="stat-detail ${runPacePct >= 100 ? 'ahead' : 'behind'}">
+            ${runPacePct.toFixed(0)}% to pace (need ${runExpected.toFixed(1)} by now)
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill ${runPct >= 100 ? 'complete' : ''}" style="width: ${Math.min(runPct, 100)}%"></div>
+          </div>
+          <div class="pct-label">${runPct.toFixed(1)}% of yearly goal</div>
+          <div class="chart-container"><canvas id="chart-run"></canvas></div>
+          <div class="chart-legend">
+            <span><span class="legend-dot" style="background:#667eea"></span>Cumulative miles</span>
+            <span><span class="legend-dot" style="background:#ffffff50"></span>Pace to 200</span>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-header">
+            <div class="stat-name">Strength</div>
+            <div class="stat-value">${strengthTotal} / ${strengthTarget} workouts</div>
+          </div>
+          <div class="stat-detail ${strengthPacePct >= 100 ? 'ahead' : 'behind'}">
+            ${strengthPacePct.toFixed(0)}% to pace (need ${strengthExpected.toFixed(1)} by now)
+          </div>
+          <div class="breakdown">
+            <div class="breakdown-item">Upper: <span>${upperCount}</span></div>
+            <div class="breakdown-item">Lower: <span>${lowerCount}</span></div>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill ${strengthPct >= 100 ? 'complete' : ''}" style="width: ${Math.min(strengthPct, 100)}%"></div>
+          </div>
+          <div class="pct-label">${strengthPct.toFixed(1)}% of yearly goal</div>
+          <div class="chart-container"><canvas id="chart-strength"></canvas></div>
+          <div class="chart-legend">
+            <span><span class="legend-dot" style="background:#764ba2"></span>Cumulative workouts</span>
+            <span><span class="legend-dot" style="background:#ffffff50"></span>Pace to 75</span>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-header">
+            <div class="stat-name">Ab Workouts</div>
+            <div class="stat-value">${absTotal} / ${absTarget} workouts</div>
+          </div>
+          <div class="stat-detail ${absPacePct >= 100 ? 'ahead' : 'behind'}">
+            ${absPacePct.toFixed(0)}% to pace (need ${absExpected.toFixed(1)} by now)
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill ${absPct >= 100 ? 'complete' : ''}" style="width: ${Math.min(absPct, 100)}%"></div>
+          </div>
+          <div class="pct-label">${absPct.toFixed(1)}% of yearly goal</div>
+          <div class="chart-container"><canvas id="chart-abs"></canvas></div>
+          <div class="chart-legend">
+            <span><span class="legend-dot" style="background:#e07a5f"></span>Cumulative workouts</span>
+            <span><span class="legend-dot" style="background:#ffffff50"></span>Pace to 75</span>
+          </div>
+        </div>
+      `;
+
+      requestAnimationFrame(() => {
+        if (dates.length >= 2) {
+          drawBarChart(document.getElementById('chart-steps'), stepsData, dates);
+          drawLineChart(document.getElementById('chart-run'),
+            [{ data: runCumulative, color: '#667eea', fill: true }], dates, { targetLine: runTarget });
+          drawLineChart(document.getElementById('chart-strength'),
+            [{ data: strengthCumulative, color: '#764ba2', fill: true }], dates, { targetLine: strengthTarget });
+          drawLineChart(document.getElementById('chart-abs'),
+            [{ data: absCumulative, color: '#e07a5f', fill: true }], dates, { targetLine: absTarget });
+        }
+      });
+    }
+  </script>
+</body>
+</html>
