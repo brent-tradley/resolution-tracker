@@ -2,8 +2,7 @@ name: Daily Reminder Email
 
 on:
   schedule:
-    # 5:00 AM EST = 10:00 AM UTC
-    - cron: '0 10 * * *'
+    - cron: '0 10 * * *' # 5:00 AM EST
   workflow_dispatch: # allows manual trigger for testing
 
 jobs:
